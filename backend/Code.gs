@@ -39,7 +39,21 @@ function getDefaultAdmin(){const s=db().getSheetByName('Admin');if(!s||s.getLast
 function hashPassword(p){const bytes=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(p),Utilities.Charset.UTF_8);return bytes.map(b=>(b<0?b+256:b).toString(16).padStart(2,'0')).join('')}
 function createDefaultAdmin(){const s=setupSheet('Admin',HEADERS.Admin);s.appendRow(['ADM-1','admin',hashPassword('ChangeMeImmediately!'),'admin','active',now()]);setupSheet('Users',HEADERS.Users);bump()}
 function getData(name){const s=db().getSheetByName(name);if(!s||s.getLastRow()<2)return [];const h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0];return s.getRange(2,1,s.getLastRow()-1,h.length).getValues().map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]])))}
-function getAllData(){const out={};Object.keys(HEADERS).forEach(n=>out[n.toLowerCase()]=getData(n));out.settings=getData('Settings')[0]||{};return out}
+const PUBLIC_SHEETS=['Settings','About','Notices','News','Events','Teachers','Staff','Courses','Departments','Classes','Results','Routine','Gallery','Videos','Articles','FAQ','Donations'];
+const PRIVATE_SHEETS=['Students','Admission','Contact','Messages','Users','Admin','Logs'];
+function sanitizePublicSheet(name,rows){
+  if(name==='Students') return rows.map(r=>({id:r.id,studentId:r.studentId,name:r.name,photo:r.photo,roll:r.roll,class:r.class,department:r.department,session:r.session,status:r.status}));
+  if(name==='Teachers') return rows.map(r=>{const x={...r};delete x.mobile;delete x.email;return x});
+  if(name==='Staff') return rows.map(r=>{const x={...r};delete x.mobile;delete x.email;return x});
+  if(name==='Results') return rows.map(r=>({id:r.id,studentId:r.studentId,roll:r.roll,name:r.name,class:r.class,exam:r.exam,subject:r.subject,marks:r.marks,gpa:r.gpa,grade:r.grade,result:r.result,status:r.status}));
+  return rows;
+}
+function getPublicData(){
+  const out={};
+  PUBLIC_SHEETS.forEach(n=>out[n.toLowerCase()]=sanitizePublicSheet(n,getData(n)));
+  out.settings=getData('Settings')[0]||{};
+  return out;
+}
 function saveData(name,obj){const s=setupSheet(name,headersFor(name));const h=headersFor(name);const id=obj.id||Utilities.getUuid();const row=h.map(k=>obj[k]!==undefined?obj[k]:(k==='id'?id:''));s.appendRow(row);bump();return {id}}
 function updateData(name,id,obj){const s=db().getSheetByName(name);if(!s)throw Error('Sheet not found');const h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0];const values=s.getDataRange().getValues();for(let i=1;i<values.length;i++){if(String(values[i][0])===String(id)){s.getRange(i+1,1,1,h.length).setValues([h.map((k,j)=>obj[k]!==undefined?obj[k]:values[i][j])]);bump();return true}}throw Error('Record not found')}
 function deleteData(name,id){const s=db().getSheetByName(name);if(!s)throw Error('Sheet not found');const v=s.getDataRange().getValues();for(let i=1;i<v.length;i++)if(String(v[i][0])===String(id)){s.deleteRow(i+1);bump();return true}throw Error('Record not found')}
@@ -54,5 +68,42 @@ function syncData(){bump();return {version:getVersion()}}
 function pushData(name,rows){rows.forEach(r=>saveData(name,r));return true}
 function backupData(){const snap=JSON.stringify(getAllData());const s=setupSheet('Backup',['id','createdAt','payload']);s.appendRow([Utilities.getUuid(),now(),snap]);return true}
 function checkAuth(payload){const u=String(payload.username||''),p=String(payload.password||'');const admins=getData('Admin');const a=admins.find(x=>x.username===u&&x.status==='active');if(!a||hashPassword(p)!==a.passwordHash)throw Error('Invalid credentials');const t=token();CacheService.getScriptCache().put('sess_'+t,JSON.stringify({username:u,role:a.role}),SESSION_TTL);return t}
-function doGet(e){try{const action=(e.parameter&&e.parameter.action)||'getAllData';if(action==='login')return fail('Use POST for login','METHOD');if(action==='getAllData')return json(getAllData());if(action==='getSettings')return json(getSettings());const data=getAllData();return json(data)}catch(err){return fail(err.message)}}
-function doPost(e){try{const p=JSON.parse((e.postData&&e.postData.contents)||'{}');const action=p.action,payload=p.payload||{};if(action==='login')return json({token:checkAuth(payload),user:payload.username});const u=auth(p.token);if(!u)return fail('Unauthorized','AUTH');let result=null;switch(action){case'setupSheets':result=setupSheets();break;case'saveData':result=saveData(payload.sheet,payload.data);log(JSON.parse(u).username,'create',payload.sheet,result.id);break;case'updateData':result=updateData(payload.sheet,payload.id,payload.data);log(JSON.parse(u).username,'update',payload.sheet,payload.id);break;case'deleteData':result=deleteData(payload.sheet,payload.id);log(JSON.parse(u).username,'delete',payload.sheet,payload.id);break;case'backupData':result=backupData();break;case'syncData':result=syncData();break;case'pushData':result=pushData(payload.sheet,payload.rows||[]);break;default:throw Error('Unknown action')}return json(result)}catch(err){return fail(err.message)}}
+function publicJson(data,callback){
+  const body=JSON.stringify({success:true,timestamp:now(),version:getVersion(),data:data||{}});
+  if(callback&&/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(callback)) return ContentService.createTextOutput(callback+'('+body+');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JSON);
+}
+function doGet(e){
+  try{
+    const action=(e.parameter&&e.parameter.action)||'getAllData';
+    const callback=e.parameter&&e.parameter.callback;
+    setupSheets();
+    if(action==='login') return fail('Login must use POST','METHOD');
+    if(action==='ping') return publicJson({ok:true,service:'madrasa-api',message:'API is running'},callback);
+    if(action==='getSettings') return publicJson(getSettings(),callback);
+    if(action==='getAllData'||action==='publicData') return publicJson(getPublicData(),callback);
+    return publicJson(getPublicData(),callback);
+  }catch(err){return fail(err.message)}
+}
+function doPost(e){
+  try{
+    const p=JSON.parse((e.postData&&e.postData.contents)||'{}');
+    const action=p.action,payload=p.payload||{};
+    if(action==='login') return json({token:checkAuth(payload),user:payload.username});
+    const u=auth(p.token);
+    if(!u)return fail('Unauthorized','AUTH');
+    let result=null;
+    switch(action){
+      case'getAllData': result=getAdminData(); break;
+      case'setupSheets': result=setupSheets(); break;
+      case'saveData': result=saveData(payload.sheet,payload.data); log(JSON.parse(u).username,'create',payload.sheet,result.id); break;
+      case'updateData': result=updateData(payload.sheet,payload.id,payload.data); log(JSON.parse(u).username,'update',payload.sheet,payload.id); break;
+      case'deleteData': result=deleteData(payload.sheet,payload.id); log(JSON.parse(u).username,'delete',payload.sheet,payload.id); break;
+      case'backupData': result=backupData(); break;
+      case'syncData': result=syncData(); break;
+      case'pushData': result=pushData(payload.sheet,payload.rows||[]); break;
+      default: throw Error('Unknown action');
+    }
+    return json(result);
+  }catch(err){return fail(err.message)}
+}
