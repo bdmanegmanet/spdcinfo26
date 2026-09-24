@@ -54,6 +54,17 @@ function getPublicData(){
   out.settings=getData('Settings')[0]||{};
   return out;
 }
+function getAllData(){
+  const out={};
+  Object.keys(HEADERS).forEach(n=>out[n.toLowerCase()]=getData(n));
+  out.settings=getData('Settings')[0]||{};
+  return out;
+}
+function getAdminData(){
+  const out=getAllData();
+  ['admin','users'].forEach(k=>{if(Array.isArray(out[k]))out[k]=out[k].map(x=>{const y={...x};delete y.passwordHash;return y})});
+  return out;
+}
 function saveData(name,obj){const s=setupSheet(name,headersFor(name));const h=headersFor(name);const id=obj.id||Utilities.getUuid();const row=h.map(k=>obj[k]!==undefined?obj[k]:(k==='id'?id:''));s.appendRow(row);bump();return {id}}
 function updateData(name,id,obj){const s=db().getSheetByName(name);if(!s)throw Error('Sheet not found');const h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0];const values=s.getDataRange().getValues();for(let i=1;i<values.length;i++){if(String(values[i][0])===String(id)){s.getRange(i+1,1,1,h.length).setValues([h.map((k,j)=>obj[k]!==undefined?obj[k]:values[i][j])]);bump();return true}}throw Error('Record not found')}
 function deleteData(name,id){const s=db().getSheetByName(name);if(!s)throw Error('Sheet not found');const v=s.getDataRange().getValues();for(let i=1;i<v.length;i++)if(String(v[i][0])===String(id)){s.deleteRow(i+1);bump();return true}throw Error('Record not found')}
