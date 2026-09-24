@@ -1,4 +1,4 @@
-const API_URL=localStorage.getItem('MADRASA_API_URL')||'https://script.google.com/macros/s/AKfcybyFr62Z-zPn0exJEYKkROFAjBpRNuATHO62scf-H8grDaOi8om4TXt2e0d0dK-rC7cAbR/exec';
+const API_URL=localStorage.getItem('MADRASA_API_URL')||'https://script.google.com/macros/s/AKfycbyFr62Z-zPn0exJEYKkROFAjBpRNuATHO62scf-H8grDaOi8om4TXt2e0dK-rC7cAbR/exec';
 let STORE={version:null,data:{}};
 let DEFAULTS_READY=null;
 
