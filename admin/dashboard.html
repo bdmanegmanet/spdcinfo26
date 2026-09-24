@@ -47,7 +47,8 @@ Articles:['id','title','author','thumbnail','short','details','category','tags',
 FAQ:['id','question','answer','category','status'],
 Messages:['id','name','mobile','email','subject','message','status','createdAt'],
 Contact:['id','name','email','mobile','subject','message','status','createdAt'],
-Donations:['id','method','accountName','accountNumber','instructions','qrUrl','status']
+Donations:['id','method','accountName','accountNumber','instructions','qrUrl','status'],
+Logs:['id','username','action','sheet','recordId','createdAt','ip']
 };
 const MENU=[...Object.keys(SCHEMA),'Dashboard'];
 let sheet='';let rows=[];let page=1;let editId=null;
